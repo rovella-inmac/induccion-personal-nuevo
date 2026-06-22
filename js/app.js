@@ -83,6 +83,7 @@
      ============================================================ */
   var ytPlayer = null;
   var ytReady  = false;
+  var videoPrimed = false; // ¿ya se desbloqueó el reproductor con el gesto del usuario?
 
   // Callback global que invoca la API de YouTube al cargar.
   window.onYouTubeIframeAPIReady = function () {
@@ -94,7 +95,11 @@
         origin: window.location.origin // evita Error 153 (config del reproductor)
       },
       events: {
-        onReady: function () { ytReady = true; },
+        onReady: function () {
+          ytReady = true;
+          // Si el usuario ya presionó Reproducir, desbloquear el video ya.
+          if (started) primeVideoOnce();
+        },
         onStateChange: onYtStateChange
       }
     });
@@ -108,18 +113,37 @@
     }
   }
 
+  /* Desbloquea el reproductor de YouTube usando el gesto del usuario
+     (clic en Reproducir). Hace un play muteado instantáneo y lo pausa,
+     dejándolo listo para autoplay CON sonido al llegar a la lámina 06. */
+  function primeVideoOnce() {
+    if (videoPrimed || !ytReady || !ytPlayer) return;
+    videoPrimed = true;
+    try {
+      ytPlayer.mute();
+      ytPlayer.playVideo();
+      setTimeout(function () {
+        try {
+          ytPlayer.pauseVideo();
+          ytPlayer.seekTo(0);
+          if (!muted) ytPlayer.unMute();
+        } catch (err) {}
+      }, 160);
+    } catch (err) {}
+  }
+
   function showVideo() {
     videoWrap.classList.add("show");
     if (!ytReady || !ytPlayer) return;
 
     ytPlayer.seekTo(0);
-    if (!muted) ytPlayer.unMute();
+    if (!muted) ytPlayer.unMute();   // ya desbloqueado por primeVideoOnce()
     ytPlayer.setVolume(volume * 100);
     ytPlayer.playVideo();
 
-    // Fallback: si tras ~600ms no está reproduciendo (autoplay con sonido
-    // bloqueado por el navegador), silenciar y reintentar para que arranque
-    // y pueda dispararse el evento ENDED.
+    // Última red de seguridad: si aún así el navegador bloquea el autoplay
+    // con sonido, reproducir muteado para no detener la secuencia (raro,
+    // solo si el gesto inicial no pudo desbloquear el reproductor).
     setTimeout(function () {
       try {
         var st = ytPlayer.getPlayerState();
@@ -128,7 +152,7 @@
           ytPlayer.playVideo();
         }
       } catch (err) {}
-    }, 600);
+    }, 700);
   }
   function hideVideo() {
     videoWrap.classList.remove("show");
@@ -284,6 +308,7 @@
      ============================================================ */
   function play() {
     started = true;
+    primeVideoOnce(); // usa este gesto para desbloquear el video de YouTube
     refreshSidebar(); // oculta la barra si autoplay sigue activo
     if (audio.src && audio.paused && audio.currentTime > 0) {
       // Reanudar audio pausado.
