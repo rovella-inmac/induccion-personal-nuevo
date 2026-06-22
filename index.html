@@ -13,9 +13,14 @@
     <div id="viewport">
       <!-- Las <img> de cada diapositiva se inyectan por JS -->
 
-      <!-- Contenedor del video de YouTube (diapositiva 06) -->
+      <!-- Contenedor del video de Vimeo (diapositiva 06) -->
       <div id="videoWrap">
-        <div id="ytPlayer"></div>
+        <iframe id="vimeoPlayer"
+          src="https://player.vimeo.com/video/1203561984?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479"
+          frameborder="0"
+          allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+          referrerpolicy="strict-origin-when-cross-origin"
+          title="Video inducción"></iframe>
       </div>
     </div>
   </div>
@@ -76,8 +81,8 @@
     </span>
   </div>
 
-  <!-- API de YouTube + lógica -->
-  <script src="https://www.youtube.com/iframe_api"></script>
+  <!-- SDK de Vimeo + lógica -->
+  <script src="https://player.vimeo.com/api/player.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

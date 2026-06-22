@@ -11,11 +11,12 @@
        img    -> nombre del archivo PNG
        audio  -> archivo MP3 (null = sin audio propio)
      Casos especiales:
-       slide 6  -> video de YouTube tras su audio
+       slide 6  -> video de Vimeo tras su audio
        slide 17 -> audio compartido 17-18, cambia a slide 18 al 50%
        slide 18 -> NO tiene audio propio (lo cubre el de la 17)
+     El video (lámina 06) es de Vimeo y se controla con el SDK player.js;
+     el iframe correspondiente está en index.html (id="vimeoPlayer").
   -------------------------------------------------------------- */
-  var YT_VIDEO_ID = "fwn3IKzY0_Y"; // video diapositiva 06
 
   var SLIDES = [
     { img: "Diapositiva01.png", audio: "Audio01.mp3" },
@@ -79,85 +80,71 @@
   });
 
   /* ============================================================
-     YouTube IFrame API (video diapositiva 06)
+     Vimeo Player SDK (video diapositiva 06)
      ============================================================ */
-  var ytPlayer = null;
-  var ytReady  = false;
-  var videoPrimed = false; // ¿ya se desbloqueó el reproductor con el gesto del usuario?
+  var vimeoPlayer  = null;
+  var vimeoReady   = false;
+  var vimeoPlaying = false; // estado actual del video (vía eventos play/pause)
+  var videoPrimed  = false; // ¿ya se desbloqueó el reproductor con el gesto del usuario?
 
-  // Callback global que invoca la API de YouTube al cargar.
-  window.onYouTubeIframeAPIReady = function () {
-    ytPlayer = new YT.Player("ytPlayer", {
-      videoId: YT_VIDEO_ID,
-      playerVars: {
-        rel: 0, modestbranding: 1, playsinline: 1, controls: 1,
-        enablejsapi: 1,
-        origin: window.location.origin // evita Error 153 (config del reproductor)
-      },
-      events: {
-        onReady: function () {
-          ytReady = true;
-          // Si el usuario ya presionó Reproducir, desbloquear el video ya.
-          if (started) primeVideoOnce();
-        },
-        onStateChange: onYtStateChange
-      }
-    });
-  };
+  // Inicializa el reproductor de Vimeo sobre el <iframe id="vimeoPlayer">.
+  if (window.Vimeo && window.Vimeo.Player) {
+    vimeoPlayer = new window.Vimeo.Player("vimeoPlayer");
 
-  function onYtStateChange(e) {
-    // 0 = ENDED -> avanzar a la diapositiva 07 si autoplay
-    if (e.data === YT.PlayerState.ENDED) {
+    vimeoPlayer.ready().then(function () {
+      vimeoReady = true;
+      vimeoPlayer.setVolume(volume);
+      // Si el usuario ya presionó Reproducir, desbloquear el video ya.
+      if (started) primeVideoOnce();
+    }).catch(function () {});
+
+    // Mantener el estado de reproducción para los controles.
+    vimeoPlayer.on("play",  function () { vimeoPlaying = true; });
+    vimeoPlayer.on("pause", function () { vimeoPlaying = false; });
+
+    // Fin del video -> avanzar a la diapositiva 07 si autoplay está activo.
+    vimeoPlayer.on("ended", function () {
+      vimeoPlaying = false;
       hideVideo();
       if (autoplay) goTo(6, true); // índice 6 = diapositiva 07
-    }
+    });
   }
 
-  /* Desbloquea el reproductor de YouTube usando el gesto del usuario
+  /* Desbloquea el reproductor de Vimeo usando el gesto del usuario
      (clic en Reproducir). Hace un play muteado instantáneo y lo pausa,
      dejándolo listo para autoplay CON sonido al llegar a la lámina 06. */
   function primeVideoOnce() {
-    if (videoPrimed || !ytReady || !ytPlayer) return;
+    if (videoPrimed || !vimeoReady || !vimeoPlayer) return;
     videoPrimed = true;
-    try {
-      ytPlayer.mute();
-      ytPlayer.playVideo();
-      setTimeout(function () {
-        try {
-          ytPlayer.pauseVideo();
-          ytPlayer.seekTo(0);
-          if (!muted) ytPlayer.unMute();
-        } catch (err) {}
-      }, 160);
-    } catch (err) {}
+    vimeoPlayer.setMuted(true);
+    vimeoPlayer.play().then(function () {
+      return vimeoPlayer.pause();
+    }).then(function () {
+      return vimeoPlayer.setCurrentTime(0);
+    }).then(function () {
+      if (!muted) vimeoPlayer.setMuted(false);
+    }).catch(function () {});
   }
 
   function showVideo() {
     videoWrap.classList.add("show");
-    if (!ytReady || !ytPlayer) return;
+    if (!vimeoReady || !vimeoPlayer) return;
 
-    ytPlayer.seekTo(0);
-    if (!muted) ytPlayer.unMute();   // ya desbloqueado por primeVideoOnce()
-    ytPlayer.setVolume(volume * 100);
-    ytPlayer.playVideo();
-
-    // Última red de seguridad: si aún así el navegador bloquea el autoplay
-    // con sonido, reproducir muteado para no detener la secuencia (raro,
-    // solo si el gesto inicial no pudo desbloquear el reproductor).
-    setTimeout(function () {
-      try {
-        var st = ytPlayer.getPlayerState();
-        if (st !== YT.PlayerState.PLAYING && st !== YT.PlayerState.ENDED) {
-          ytPlayer.mute();
-          ytPlayer.playVideo();
-        }
-      } catch (err) {}
-    }, 700);
+    vimeoPlayer.setCurrentTime(0).catch(function () {});
+    vimeoPlayer.setMuted(!!muted);   // ya desbloqueado por primeVideoOnce()
+    vimeoPlayer.setVolume(volume);
+    vimeoPlayer.play().catch(function () {
+      // Última red de seguridad: si el navegador bloquea autoplay con sonido,
+      // reproducir muteado para no detener la secuencia (caso raro).
+      vimeoPlayer.setMuted(true);
+      vimeoPlayer.play().catch(function () {});
+    });
   }
+
   function hideVideo() {
     videoWrap.classList.remove("show");
-    if (ytReady && ytPlayer) {
-      try { ytPlayer.stopVideo(); } catch (err) {}
+    if (vimeoReady && vimeoPlayer) {
+      vimeoPlayer.pause().catch(function () {});
     }
   }
 
@@ -308,7 +295,7 @@
      ============================================================ */
   function play() {
     started = true;
-    primeVideoOnce(); // usa este gesto para desbloquear el video de YouTube
+    primeVideoOnce(); // usa este gesto para desbloquear el video de Vimeo
     refreshSidebar(); // oculta la barra si autoplay sigue activo
     if (audio.src && audio.paused && audio.currentTime > 0) {
       // Reanudar audio pausado.
@@ -316,7 +303,7 @@
       setAudioBadge(true);
     } else if (SLIDES[current].video &&
                videoWrap.classList.contains("show")) {
-      if (ytReady) ytPlayer.playVideo();
+      if (vimeoReady) vimeoPlayer.play().catch(function () {});
     } else {
       playAudioForCurrent();
     }
@@ -325,8 +312,8 @@
   function pause() {
     audio.pause();
     setAudioBadge(false);
-    if (videoWrap.classList.contains("show") && ytReady) {
-      ytPlayer.pauseVideo();
+    if (videoWrap.classList.contains("show") && vimeoReady) {
+      vimeoPlayer.pause().catch(function () {});
     }
   }
 
@@ -334,8 +321,7 @@
   function togglePlay() {
     var videoMode = videoWrap.classList.contains("show");
     var isPlaying = videoMode
-      ? (ytReady && ytPlayer.getPlayerState &&
-         ytPlayer.getPlayerState() === YT.PlayerState.PLAYING)
+      ? vimeoPlaying
       : (!audio.paused && audio.currentTime > 0);
     isPlaying ? pause() : play();
   }
@@ -351,7 +337,11 @@
   function restartAudio() {
     if (!started) return;
     if (videoWrap.classList.contains("show")) {
-      if (ytReady) { ytPlayer.seekTo(0); ytPlayer.playVideo(); }
+      if (vimeoReady) {
+        vimeoPlayer.setCurrentTime(0).then(function () {
+          return vimeoPlayer.play();
+        }).catch(function () {});
+      }
       return;
     }
     playAudioForCurrent();
@@ -368,8 +358,8 @@
   function toggleMute() {
     muted = !muted;
     audio.muted = muted;
-    if (ytReady && ytPlayer) {
-      muted ? ytPlayer.mute() : ytPlayer.unMute();
+    if (vimeoReady && vimeoPlayer) {
+      vimeoPlayer.setMuted(muted).catch(function () {});
     }
     document.getElementById("btnMute")
       .classList.toggle("on", muted);
@@ -379,7 +369,7 @@
   function setVolume(v) {
     volume = v;
     audio.volume = v;
-    if (ytReady && ytPlayer) ytPlayer.setVolume(v * 100);
+    if (vimeoReady && vimeoPlayer) vimeoPlayer.setVolume(v).catch(function () {});
   }
 
   function toggleAutoplay() {
